@@ -1,0 +1,16 @@
+#!/bin/sh
+# Lists the tenant containers of the Compose dev setup with their mesh
+# addresses.
+cd "$(dirname "$0")/.." || exit 1
+
+{
+	echo "CONTAINER NETWORK NAMES IPV4 IPV6"
+	for service in $(docker compose ps --services --status running | sort); do
+		[ "$service" != etcd ] || continue
+		docker compose exec -T "$service" sh -c '
+			[ -n "${OPEN6PN_NETWORK:-}" ] || exit 0
+			v4=$(ip -4 -o addr show dev o6pn0 2>/dev/null | awk "{print \$4}" | cut -d/ -f1)
+			v6=$(ip -6 -o addr show dev o6pn0 scope global 2>/dev/null | awk "{print \$4}" | cut -d/ -f1)
+			echo "$(hostname) $OPEN6PN_NETWORK ${OPEN6PN_NAMES:--} ${v4:-not-attached} ${v6:--}"'
+	done
+} | column -t

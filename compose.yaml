@@ -1,0 +1,159 @@
+# A mesh to play with: etcd, three hosts, and seven tenant containers in two
+# private networks.
+#
+#   docker compose up -d --build --wait     start (or rebuild after a change)
+#   ./dev/addrs                             who has which address
+#   docker compose exec blue-web ping db    use it
+#   docker compose down -v                  throw it away
+#
+#            n1                    n2            n3
+#   blue     blue-web, blue-worker blue-api      blue-db
+#   red      red-web               red-api       red-db
+#
+# The hosts are privileged containers on an ordinary Docker network, which
+# stands in for the internet between them. Each runs the open6pn daemon and
+# attaches its tenant containers (dev/host.sh).
+#
+# The tenant containers have no Docker network at all (network_mode: none):
+# the mesh interface is their only way out. They share their host's PID
+# namespace, which is how the host finds their network namespace. That is a
+# shortcut for this setup, not something to copy: a tenant can see and signal
+# the host's processes.
+
+name: open6pn-dev
+
+x-host: &host
+  image: open6pn-dev
+  pull_policy: never
+  command: open6pn-dev-host
+  privileged: true
+  networks: [underlay]
+  environment:
+    OPEN6PN_ETCD: http://etcd:2379
+    OPEN6PN_NETWORKS: blue,red
+    # Extra daemon flags, for example "--debug".
+    OPEN6PN_DAEMON_FLAGS: ""
+  healthcheck:
+    test: ["CMD", "test", "-e", "/run/open6pn-dev-ready"]
+    interval: 30s
+    start_period: 60s
+    start_interval: 500ms
+
+x-tenant: &tenant
+  image: open6pn-dev
+  pull_policy: never
+  command: sleep infinity
+  # A tenant dies with its host container (they share a PID namespace); this
+  # brings it back once the host is up again.
+  restart: unless-stopped
+  network_mode: none
+  dns: ["fdaa::53"]
+  dns_search: [internal]
+  healthcheck:
+    # Healthy once the host has attached it.
+    test: ["CMD-SHELL", "ip -6 route show fdaa::/16 | grep -q via"]
+    interval: 30s
+    start_period: 60s
+    start_interval: 500ms
+
+services:
+  etcd:
+    image: gcr.io/etcd-development/etcd:v3.6.0
+    command: etcd --data-dir /data --listen-client-urls http://0.0.0.0:2379 --advertise-client-urls http://etcd:2379
+    networks: [underlay]
+    volumes: [etcd:/data]
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 30s
+      start_period: 60s
+      start_interval: 500ms
+
+  # The hosts start one after another so that they get node IDs 1, 2 and 3,
+  # which keeps every address in this setup the same from run to run.
+  n1:
+    <<: *host
+    build:
+      context: .
+      dockerfile: dev/Dockerfile
+    hostname: n1
+    volumes: [n1:/var/lib/open6pn]
+    depends_on:
+      etcd: {condition: service_healthy}
+  n2:
+    <<: *host
+    hostname: n2
+    volumes: [n2:/var/lib/open6pn]
+    depends_on:
+      n1: {condition: service_healthy}
+  n3:
+    <<: *host
+    hostname: n3
+    volumes: [n3:/var/lib/open6pn]
+    depends_on:
+      n2: {condition: service_healthy}
+
+  # blue
+  blue-web:
+    <<: *tenant
+    hostname: blue-web
+    pid: service:n1
+    depends_on:
+      n1: {condition: service_healthy}
+    environment: {OPEN6PN_NETWORK: blue, OPEN6PN_NAMES: web}
+  blue-worker:
+    <<: *tenant
+    hostname: blue-worker
+    pid: service:n1
+    depends_on:
+      # After blue-web, so that blue-web is always blue's first endpoint on n1.
+      blue-web: {condition: service_healthy}
+    environment: {OPEN6PN_NETWORK: blue, OPEN6PN_NAMES: worker}
+  blue-api:
+    <<: *tenant
+    hostname: blue-api
+    pid: service:n2
+    depends_on:
+      n2: {condition: service_healthy}
+    environment: {OPEN6PN_NETWORK: blue, OPEN6PN_NAMES: api}
+  blue-db:
+    <<: *tenant
+    hostname: blue-db
+    pid: service:n3
+    depends_on:
+      n3: {condition: service_healthy}
+    environment: {OPEN6PN_NETWORK: blue, OPEN6PN_NAMES: db}
+
+  # red: the same names as blue, and the same IPv4 addresses.
+  red-web:
+    <<: *tenant
+    hostname: red-web
+    pid: service:n1
+    depends_on:
+      n1: {condition: service_healthy}
+    environment: {OPEN6PN_NETWORK: red, OPEN6PN_NAMES: web}
+  red-api:
+    <<: *tenant
+    hostname: red-api
+    pid: service:n2
+    depends_on:
+      n2: {condition: service_healthy}
+    environment: {OPEN6PN_NETWORK: red, OPEN6PN_NAMES: api}
+  red-db:
+    <<: *tenant
+    hostname: red-db
+    pid: service:n3
+    depends_on:
+      n3: {condition: service_healthy}
+    environment: {OPEN6PN_NETWORK: red, OPEN6PN_NAMES: db}
+
+networks:
+  underlay:
+
+# The cluster's state: etcd's data, and each host's key and node ID. Keeping
+# them means a rebuilt host comes back as the same node, with the same
+# addresses. "docker compose down -v" removes them.
+volumes:
+  etcd:
+  n1:
+  n2:
+  n3:
