@@ -136,9 +136,14 @@ func createVeth(ns netns.NsHandle, req VethRequest) (netlink.Link, error) {
 	hostName := "o6pn" + hex.EncodeToString(suffix) // 14 characters; the limit is 15
 	peerName := "mtmp" + hex.EncodeToString(suffix)
 
+	mac, err := newHostMAC()
+	if err != nil {
+		return nil, err
+	}
 	la := netlink.NewLinkAttrs()
 	la.Name = hostName
 	la.MTU = req.MTU
+	la.HardwareAddr = mac
 	if err := netlink.LinkAdd(&netlink.Veth{LinkAttrs: la, PeerName: peerName, PeerNamespace: netlink.NsFd(int(ns))}); err != nil {
 		return nil, fmt.Errorf("create veth: %w", err)
 	}
@@ -241,4 +246,13 @@ func inNetns(ns netns.NsHandle, fn func() error) error {
 		errc <- err
 	}()
 	return <-errc
+}
+
+func newHostMAC() (net.HardwareAddr, error) {
+	mac := make(net.HardwareAddr, 6)
+	if _, err := rand.Read(mac); err != nil {
+		return nil, err
+	}
+	mac[0] = mac[0]&^0x01 | 0x02
+	return mac, nil
 }
