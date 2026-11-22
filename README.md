@@ -55,6 +55,8 @@ make build
 
 This produces `bin/open6pn-linux-<arch>`. The compiled eBPF object is committed; `make bpf` rebuilds it from `internal/datapath/bpf/open6pn.c` using Docker.
 
+With Nix, `nix build` produces `result/bin/open6pn` on Linux and runs the unit tests, and `nix develop` gives a shell with Go on Linux and macOS.
+
 ## Quick start
 
 On every host:
