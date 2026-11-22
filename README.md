@@ -311,3 +311,9 @@ compose.yaml, dev         a local mesh to try things on (Docker Compose)
 open6pn is inspired by [Fly.io](https://fly.io) and its 6PN ("IPv6 private networking"), which the name refers to. The core of the design is theirs: a WireGuard mesh between hosts, IPv6 addresses under `fdaa::/16` that carry the host and the network, eBPF to keep networks apart, and `.internal` DNS. Fly.io described it in [Incoming! 6PN Private Networks](https://fly.io/blog/incoming-6pn-private-networks/) and documents it under [Private Networking](https://fly.io/docs/networking/private-networking/).
 
 This project is not affiliated with or endorsed by Fly.io, and shares no code with it. The address layout, the IPv4 support and the implementation are its own, and so are its mistakes.
+
+## License
+
+MIT; see [LICENSE](LICENSE).
+
+The eBPF programs in `internal/datapath/bpf` are the exception: they are licensed under GPL-2.0-only or BSD-2-Clause, at your option, as their header says. The kernel only lets a program use some of its helpers if it declares a GPL-compatible licence.
