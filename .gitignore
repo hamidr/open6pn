@@ -1,2 +1,4 @@
 /bin/
 /test/e2e/.build/
+/result
+/result-*
