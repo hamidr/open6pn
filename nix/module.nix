@@ -134,7 +134,7 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    boot.kernelModules = [ "wireguard" ];
+    boot.kernelModules = [ "wireguard" ] ++ lib.optional (!config.networking.nftables.enable) "xt_mark";
 
     environment.systemPackages = [ cfg.package ];
     environment.variables.OPEN6PN_SOCKET = cfg.socket;
